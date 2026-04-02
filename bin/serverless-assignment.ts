@@ -3,6 +3,9 @@ import * as cdk from 'aws-cdk-lib/core';
 import { ServerlessAssignmentStack } from '../lib/serverless-assignment-stack';
 
 const app = new cdk.App();
+// REVIEW: The stack ID is hardcoded as 'ServerlessAssignmentStack'. Create an environment config
+// (e.g., dev/staging/prod) and use it to suffix the stack ID like `ServerlessAssignmentStack-${env}`.
+// This prevents naming collisions when deploying multiple environments to the same AWS account.
 new ServerlessAssignmentStack(app, 'ServerlessAssignmentStack', {
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,

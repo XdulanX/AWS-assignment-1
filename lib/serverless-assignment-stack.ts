@@ -12,14 +12,17 @@ export class ServerlessAssignmentStack extends cdk.Stack {
 
     // Create S3 Bucket
     const assetBucket = new s3.Bucket(this, 'Dulan-assignment-assets-bucket-2026', {
-      removalPolicy: cdk.RemovalPolicy.DESTROY, 
-      autoDeleteObjects: true, 
+      // REVIEW: `removalPolicy: DESTROY` and `autoDeleteObjects: true` are fine for dev, but dangerous
+      // in production — they will permanently delete all data on `cdk destroy`. These should be driven
+      // by an environment config (e.g., DESTROY for dev, RETAIN for prod).
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
     });
 
     // Upload local files to the S3 bucket
     new s3deploy.BucketDeployment(this, 'DeployAssignmentAssets', {
       sources: [s3deploy.Source.asset('./assets')],
-      destinationBucket: assetBucket,             
+      destinationBucket: assetBucket,
     });
 
     // Create DynamoDB Table 
@@ -30,9 +33,16 @@ export class ServerlessAssignmentStack extends cdk.Stack {
     });
 
     // Create Lambda Functions
+    // RE: NodejsFunction —`aws-cdk-lib/aws-lambda-nodejs.NodejsFunction` automatically
+    // bundles your handler with esbuild (tree-shaking, minification, dependency resolution) so you don't
+    // need to manage the runtime or code path manually. It would also solve the shared-bundle issue below.
+    // Worth adopting, especially as the number of Lambdas grows.
     const postUserLambda = new lambda.Function(this, 'PostUserLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset('lambda'), 
+      // REVIEW: Both Lambdas package the entire `lambda/` directory, meaning each function ships with
+      // the other's code. Separate them into `lambda/postUser/` and `lambda/getAssets/` directories,
+      // or switch to `NodejsFunction` which handles this automatically via per-handler bundling.
+      code: lambda.Code.fromAsset('lambda'),
       handler: 'postUser.handler',
       environment: {
         TABLE_NAME: usersTable.tableName, 
@@ -54,7 +64,13 @@ export class ServerlessAssignmentStack extends cdk.Stack {
 
     // Create API Gateway
     const api = new apigateway.RestApi(this, 'OnboardingApi', {
+      // REVIEW: Hardcoded name — use an environment-scoped name (e.g., `Onboarding-Service-${env}`)
+      // or let CDK auto-generate one, so multiple environments don't collide.
       restApiName: 'Onboarding Service',
+      // REVIEW: The assignment's Step 0 warns about Denial of Wallet attacks, currently this API has no
+      // throttling. Add rate/burst limits:
+      //   deployOptions: { throttlingRateLimit: 10, throttlingBurstLimit: 25 }
+      //
     });
 
     // Connect /users to POST Lambda
@@ -64,5 +80,8 @@ export class ServerlessAssignmentStack extends cdk.Stack {
     // Connect /assets to GET Lambda
     const assetsResource = api.root.addResource('assets');
     assetsResource.addMethod('GET', new apigateway.LambdaIntegration(getAssetsLambda));
+
+    // REVIEW: Add resource tags (e.g., project, environment, owner) using `cdk.Tags.of(this).add()`.
+    // Tags are essential for cost tracking, resource ownership, and filtering in the AWS console.
   }
 }

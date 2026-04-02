@@ -8,7 +8,8 @@ const docClient = DynamoDBDocumentClient.from(client);
 export const handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
-        
+        // REVIEW: Validations for env variables and request body
+
         const newUser = {
             userId: body.userId || crypto.randomUUID(),
             name: body.name,
