@@ -5,10 +5,35 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 
 export class ServerlessAssignmentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Create the Cognito User Pool
+    const userPool = new cognito.UserPool(this, 'ServerlessAssignmentPool', {
+      userPoolName: 'ServerlessAssignmentPool',
+      signInAliases: { email: true },
+      autoVerify: { email: true },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Create the App Client 
+    const appClient = new cognito.UserPoolClient(this, 'ServerlessOnboardingAppClient', {
+      userPool,
+      userPoolClientName: 'ServerlessOnboardingApp',
+      authFlows: {
+        userPassword: true, 
+      },
+    });
+
+    // Create the API Gateway Authorizer
+    const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoBouncer', {
+      cognitoUserPools: [userPool],
+      authorizerName: 'CognitoBouncer',
+      identitySource: 'method.request.header.Authorization',
+    });
 
     // Create S3 Bucket
     const assetBucket = new s3.Bucket(this, 'Dulan-assignment-assets-bucket-2026', {
@@ -75,11 +100,17 @@ export class ServerlessAssignmentStack extends cdk.Stack {
 
     // Connect /users to POST Lambda
     const usersResource = api.root.addResource('users');
-    usersResource.addMethod('POST', new apigateway.LambdaIntegration(postUserLambda));
+    usersResource.addMethod('POST', new apigateway.LambdaIntegration(postUserLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     // Connect /assets to GET Lambda
     const assetsResource = api.root.addResource('assets');
-    assetsResource.addMethod('GET', new apigateway.LambdaIntegration(getAssetsLambda));
+    assetsResource.addMethod('GET', new apigateway.LambdaIntegration(getAssetsLambda), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     // REVIEW: Add resource tags (e.g., project, environment, owner) using `cdk.Tags.of(this).add()`.
     // Tags are essential for cost tracking, resource ownership, and filtering in the AWS console.
